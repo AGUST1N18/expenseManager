@@ -8,7 +8,7 @@
 
 **Input**: User description: "Gestor personal ligero para controlar gastos recurrentes y suscripciones (alta, consulta, edición, eliminación, pausa y reanudación), con un panel de métricas mensuales (gasto real mensualizado, distribución por categoría, proyección anual y activas vs. pausadas) y alertas de los cobros que se renuevan en los próximos 7 días."
 
-## User Scenarios & Testing *(mandatory)*
+## User Scenarios & Testing _(mandatory)_
 
 <!--
   Los Escenarios de Aceptación se expresan en formato Gherkin
@@ -599,7 +599,7 @@ Feature: Persistencia de la información
 - **Almacenamiento no disponible o corrupto**: mensaje claro, opción de
   reiniciar los datos y ninguna pantalla en blanco ni lista corrupta.
 
-## Requirements *(mandatory)*
+## Requirements _(mandatory)_
 
 ### Functional Requirements
 
@@ -1141,7 +1141,7 @@ Rule: FR-036 La información persistida MUST ser independiente del origen de dat
 - **Preferencias**: símbolo de moneda y demás ajustes de presentación del
   usuario, aplicados a montos y métricas.
 
-## Success Criteria *(mandatory)*
+## Success Criteria _(mandatory)_
 
 ### Measurable Outcomes
 

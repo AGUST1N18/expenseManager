@@ -25,26 +25,46 @@ FR-036 sea verificable de forma automatizada (Vitest + Testing Library), con
 ## Technical Context
 
 **Language/Version**: JavaScript ES2022 (JSX), sin transpilación de tipos.
-Node.js 20 LTS o superior como entorno de desarrollo y build.
+Node.js como entorno de desarrollo y build: Vite 8 exige `^20.19.0 || >=22.12.0`
+y `jsdom` 30 declara `^22.22.2 || ^24.15.0 || >=26.0.0`. La Fase 1 se validó con
+Node v24.13.1 y npm 11.8.0.
 
-**Primary Dependencies**:
-- `react` 19.x y `react-dom` 19.x — interfaz de usuario.
-- `vite` 7.x — bundler y servidor de desarrollo.
-- `@vitejs/plugin-react` — soporte JSX y Fast Refresh.
-- `tailwindcss` 4.x + `@tailwindcss/vite` — estilización (README: "Tailwind
-  CSS para estilización rápida").
-- `vitest` 3.x, `@testing-library/react`, `@testing-library/user-event`,
-`@testing-library/jest-dom`, `jsdom` — pruebas unitarias, de contrato,
-integrales y entorno de navegador simulado (incluye `localStorage`).
-- `eslint` + `eslint-plugin-react-hooks` — control de calidad estático.
+**Primary Dependencies** (versiones instaladas y validadas en la Fase 1):
+
+- `react` 19.3.0 y `react-dom` 19.3.0 — interfaz de usuario.
+- `vite` 8.3.2 — bundler y servidor de desarrollo. Requiere Node
+  `^20.19.0 || >=22.12.0`.
+- `@vitejs/plugin-react` 6.1.1 — soporte JSX y Fast Refresh.
+- `tailwindcss` 4.3.3 + `@tailwindcss/vite` 4.3.3 — estilización (README: "Tailwind
+  CSS para estilización rápida"). Tailwind 4 se integra como plugin de Vite; no
+  requiere `tailwind.config.js` ni `postcss.config.js`.
+- `vitest` 5.0.3 + `@vitest/coverage-v8` 5.0.3, `@testing-library/react` 16.3.3,
+  `@testing-library/user-event` 14.6.7, `@testing-library/jest-dom` 7.0.1,
+  `jsdom` 30.1.1 — pruebas unitarias, de contrato, integrales y entorno de
+  navegador simulado (incluye `localStorage`). `jsdom` 30 declara engines
+  `^22.22.2 || ^24.15.0 || >=26.0.0`; el proyecto se ejecuta y las pruebas pasan
+  con Node 24.13.1 pese al aviso `EBADENGINE` de npm.
+- `eslint` 10.11.0 + `@eslint/js` 10.0.1 + `eslint-plugin-react-hooks` 7.1.1 +
+  `globals` 17.13.0 — control de calidad estático con configuración plana
+  (ESLint 10 no admite la clave `extends` en flat config).
+- `prettier` 3.9.9 — formato de código.
+
+Nota de scaffolding: el template `react` de Vite 8 usa `oxlint` y genera
+`src/index.css` y `src/App.css`. Este proyecto sustituye `oxlint` por ESLint
+(constitución V, puerta G-05) y elimina ambos CSS del template: el único `.css`
+permitido es `src/styles/index.css`.
 
 **Storage**: `localStorage` del navegador bajo una única clave versionada
 (`expenseManager:state:v1`), detrás de un adaptador de Repositorio. Sin
 servidor, sin base de datos, sin red.
 
-**Testing**: Vitest. Tres Suites: `unit` (dominio y adaptador, sin DOM),
+**Testing**: Vitest 5. Tres Suites: `unit` (dominio y adaptador, sin DOM),
 `contract` (contrato de repositorio reutilizable para cualquier adaptador
-futuro), `integration` (componentes con Testing Library sobre `jsdom`).
+futuro), `integration` (componentes con Testing Library sobre `jsdom`). La
+configuración vive en el bloque `test` de `vite.config.js` (entorno `jsdom`,
+`globals: true`, `setupFiles: ['./tests/setupTests.js']`, cobertura v8 con
+umbrales 90 sobre `src/domain/**` y `src/data/**`); el patrón `include` cubre
+`src/**` y `tests/**`.
 
 **Target Platform**: Navegador web moderno (últimas dos versiones de Chrome,
 Firefox, Safari y Edge) en escritorio y móvil. Sin soporte offline service
@@ -53,6 +73,7 @@ worker en el MVP.
 **Project Type**: `web` — aplicación frontend de una sola página, sin backend.
 
 **Performance Goals**:
+
 - 60 fps en interacción (arrastre-free; sin animaciones costosas).
 - Cálculo de métricas y alertas por debajo de 16 ms con 1.000 suscripciones
   (presupuesto de un frame).
@@ -61,6 +82,7 @@ worker en el MVP.
   con 1.000 suscripciones.
 
 **Constraints**:
+
 - 100% local: los datos de gasto no salen del navegador (spec: FR-034).
 - La lógica de negocio no puede importar React ni tocar `localStorage`
   directamente (habilita pruebas puras y la migración del almacenamiento).
@@ -78,15 +100,15 @@ funcionales, 7 componentes de dominio, 1 pantalla principal con 3 secciones.
 
 ### Decisiones de stack
 
-| Área | Decisión | Alternativas evaluadas y motivo de descarte |
-|------|----------|----------------------------------------------|
-| Librería de UI | React 19 con componentes propios | VanillaJS: menos dependencias, pero con este nivel de estado derivado (listado + panel + alertas sincronizados) la reconciliación manual agrega complejidad real y riesgo de desincronización. **Recomendación del README: React.** |
-| Estilización | Tailwind CSS 4 vía `@tailwindcss/vite` | CSS plano con custom properties: menos dependencias pero sin utilidad para estados visuales (pausada, atrasada, alerta) sin escribir CSS a mano. **README: Tailwind.** |
-| Gráficos de distribución | Barras horizontales con clases de Tailwind + ancho en porcentaje | Recharts/Chart.js: 1 dépendance pesada (~100 kB) para un solo gráfico de barras. Se registra como decisión "YAGNI"; si el panel crece, se puede incorporar más adelante. |
-| Enrutado | Sin librería de rutas: vista única con secciones y estado de pestaña en `useState` | `react-router`:innecesario para 3 secciones de una sola pantalla; una dependencia de más que mantener. |
-| Estado global | Un único `Context` + `useReducer` para suscripciones, y `useMemo` para los derivados | Redux/Zustand:innecesario con un solo tipo de entidad; Zustand es una alternativa válida si en el futuro aparecen varios dominios independientes. |
-| Manejo de fechas | Funciones propias en `src/domain/dates` (parseo, `addMonths` con clamp, `diffDays`) | `date-fns` / `Luxon`: resuelven el 90% del caso, pero el *clamp* de fin de mes (día 31 → último día del mes) y el cálculo de ocurrencias deben estar igual escritos y probados; las funciones propias son 60 líneas y verificables con casos del spec (FR-005, Edge Cases). |
-| Persistencia | `localStorage` con clave versionada y migración leída-de-enum | `indexedDB`: asíncrono real y transaccional, pero innecesario para el volumen objetivo; añadirlo después es trivial con el contrato de repositorio. |
+| Área                     | Decisión                                                                             | Alternativas evaluadas y motivo de descarte                                                                                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Librería de UI           | React 19 con componentes propios                                                     | VanillaJS: menos dependencias, pero con este nivel de estado derivado (listado + panel + alertas sincronizados) la reconciliación manual agrega complejidad real y riesgo de desincronización. **Recomendación del README: React.**                                         |
+| Estilización             | Tailwind CSS 4 vía `@tailwindcss/vite`                                               | CSS plano con custom properties: menos dependencias pero sin utilidad para estados visuales (pausada, atrasada, alerta) sin escribir CSS a mano. **README: Tailwind.**                                                                                                      |
+| Gráficos de distribución | Barras horizontales con clases de Tailwind + ancho en porcentaje                     | Recharts/Chart.js: 1 dépendance pesada (~100 kB) para un solo gráfico de barras. Se registra como decisión "YAGNI"; si el panel crece, se puede incorporar más adelante.                                                                                                    |
+| Enrutado                 | Sin librería de rutas: vista única con secciones y estado de pestaña en `useState`   | `react-router`:innecesario para 3 secciones de una sola pantalla; una dependencia de más que mantener.                                                                                                                                                                      |
+| Estado global            | Un único `Context` + `useReducer` para suscripciones, y `useMemo` para los derivados | Redux/Zustand:innecesario con un solo tipo de entidad; Zustand es una alternativa válida si en el futuro aparecen varios dominios independientes.                                                                                                                           |
+| Manejo de fechas         | Funciones propias en `src/domain/dates` (parseo, `addMonths` con clamp, `diffDays`)  | `date-fns` / `Luxon`: resuelven el 90% del caso, pero el _clamp_ de fin de mes (día 31 → último día del mes) y el cálculo de ocurrencias deben estar igual escritos y probados; las funciones propias son 60 líneas y verificables con casos del spec (FR-005, Edge Cases). |
+| Persistencia             | `localStorage` con clave versionada y migración leída-de-enum                        | `indexedDB`: asíncrono real y transaccional, pero innecesario para el volumen objetivo; añadirlo después es trivial con el contrato de repositorio.                                                                                                                         |
 
 ### Modelo de datos estructurado (JSON)
 
@@ -139,28 +161,28 @@ Clave única de almacenamiento: `expenseManager:state:v1`.
 
 #### Definición de la entidad `Suscripción`
 
-| Campo | Tipo | Reglas | Requisitos |
-|-------|------|--------|-------------|
-| `id` | `string` (UUID v4) | Generado por la aplicación, inmutable, único. Es la identidad real del registro: los nombres pueden repetirse. | FR-001, FR-008, Edge "Nombres duplicados" |
-| `name` | `string` | Obligatorio, no vacío tras `trim()`, longitud 1–80. No único. | FR-001, FR-010, escenario "nombre vacío" y "nombre muy largo" |
-| `amount` | `number` | Obligatorio, `> 0`, finito, hasta 2 decimales. Se almacena como número; el redondeo a 2 decimales se aplica solo al mostrar. | FR-004, FR-010, SC-003 |
-| `frequency` | `"MENSUAL" \| "ANUAL"` | Conjunto cerrado. La UI expone las etiquetas "Mensual" y "Anual" y persiste los identificadores en mayúsculas para poder agregar valores futuros sin romper datos. | FR-002 |
-| `category` | `string` | Obligatoria, debe pertenecer al catálogo (8 valores por defecto). Se persiste por etiqueta para que el JSON sea legible; el catálogo está centralizado en un único módulo. | FR-003 |
-| `nextChargeDate` | `string` `YYYY-MM-DD` | Obligatoria, fecha válida en calendario (admite 29 de febrero). | FR-005, FR-015 |
-| `status` | `"ACTIVA" \| "PAUSADA"` | `ACTIVA` al crear. Único campo mutado por la acción de pausa/reanudación. | FR-006, FR-016, FR-017 |
-| `createdAt` | `string` ISO 8601 UTC | Solo informativo, se conserva en ediciones. | Key Entities |
+| Campo            | Tipo                    | Reglas                                                                                                                                                                     | Requisitos                                                    |
+| ---------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| `id`             | `string` (UUID v4)      | Generado por la aplicación, inmutable, único. Es la identidad real del registro: los nombres pueden repetirse.                                                             | FR-001, FR-008, Edge "Nombres duplicados"                     |
+| `name`           | `string`                | Obligatorio, no vacío tras `trim()`, longitud 1–80. No único.                                                                                                              | FR-001, FR-010, escenario "nombre vacío" y "nombre muy largo" |
+| `amount`         | `number`                | Obligatorio, `> 0`, finito, hasta 2 decimales. Se almacena como número; el redondeo a 2 decimales se aplica solo al mostrar.                                               | FR-004, FR-010, SC-003                                        |
+| `frequency`      | `"MENSUAL" \| "ANUAL"`  | Conjunto cerrado. La UI expone las etiquetas "Mensual" y "Anual" y persiste los identificadores en mayúsculas para poder agregar valores futuros sin romper datos.         | FR-002                                                        |
+| `category`       | `string`                | Obligatoria, debe pertenecer al catálogo (8 valores por defecto). Se persiste por etiqueta para que el JSON sea legible; el catálogo está centralizado en un único módulo. | FR-003                                                        |
+| `nextChargeDate` | `string` `YYYY-MM-DD`   | Obligatoria, fecha válida en calendario (admite 29 de febrero).                                                                                                            | FR-005, FR-015                                                |
+| `status`         | `"ACTIVA" \| "PAUSADA"` | `ACTIVA` al crear. Único campo mutado por la acción de pausa/reanudación.                                                                                                  | FR-006, FR-016, FR-017                                        |
+| `createdAt`      | `string` ISO 8601 UTC   | Solo informativo, se conserva en ediciones.                                                                                                                                | Key Entities                                                  |
 
 #### Entidades derivadas (no se persisten)
 
 Se calculan en cada render a partir de las suscripciones; guardarlas sería
 duplicar información susceptible de quedar inconsistente.
 
-| Entidad derivada | Cálculo | Requisitos |
-|------------------|---------|-------------|
-| `monthlyEquivalent` | `amount` si `MENSUAL`; `amount / 12` si `ANUAL`. | FR-020 |
-| `Ocurrencia de cobro` | Fecha y monto; se generan desde `nextChargeDate` avanzando por periodicidad (mes o año) con ajuste al último día del mes destino. | FR-005, FR-022, Edge "Día 31 en un mes corto" |
-| `Métrica` | Gasto real mensual, gasto anualizado (`monthlyTotal * 12`), distribución por categoría, proyección anual, conteos activas/pausadas/total. | FR-020 a FR-026 |
-| `Alerta de renovación` | Suscripción `ACTIVA` cuya próxima ocurrencia cae entre hoy y hoy + 7 días inclusive, con `daysRemaining` y monto. | FR-027 a FR-032 |
+| Entidad derivada       | Cálculo                                                                                                                                   | Requisitos                                    |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `monthlyEquivalent`    | `amount` si `MENSUAL`; `amount / 12` si `ANUAL`.                                                                                          | FR-020                                        |
+| `Ocurrencia de cobro`  | Fecha y monto; se generan desde `nextChargeDate` avanzando por periodicidad (mes o año) con ajuste al último día del mes destino.         | FR-005, FR-022, Edge "Día 31 en un mes corto" |
+| `Métrica`              | Gasto real mensual, gasto anualizado (`monthlyTotal * 12`), distribución por categoría, proyección anual, conteos activas/pausadas/total. | FR-020 a FR-026                               |
+| `Alerta de renovación` | Suscripción `ACTIVA` cuya próxima ocurrencia cae entre hoy y hoy + 7 días inclusive, con `daysRemaining` y monto.                         | FR-027 a FR-032                               |
 
 #### Reglas de formato y redondeo
 
@@ -216,19 +238,21 @@ Contrato  SubscriptionRepository  (async: findAll, findById, create, update, del
 
 Definido como documentación ejecutable en
 `src/data/repositories/SubscriptionRepository.js` (contrato formal en JSDoc +
-tipos de retorno) y verificado por la suite compartida
-`tests/contract/repositoryContract.test.js`. Cualquier adaptador nuevo, real o
-falso, debe pasar esa suite sin cambios.
+tipos de retorno), documentado para las personas en
+`specs/001-expensiveManager/contracts/subscription-repository.md` (tarea T038) y
+verificado por la suite compartida `tests/contract/repositoryContract.test.js`
+(tarea T049). Cualquier adaptador nuevo, real o falso, debe pasar esa suite sin
+cambios.
 
-| Método | Entrada | Salida | Errores que puede propagar |
-|--------|---------|--------|-----------------------------|
-| `findAll()` | — | `Promise<Suscripcion[]>` ordenado por `nextChargeDate` ascendente | `StorageError` |
-| `findById(id)` | `string` | `Promise<Suscripcion \| null>` | `StorageError` |
-| `create(data)` | `SuscripcionNueva` | `Promise<Suscripcion>` | `ValidationError`, `StorageError` |
-| `update(id, changes)` | `string`, parcial de campos editables | `Promise<Suscripcion>` | `NotFoundError`, `ValidationError`, `StorageError` |
-| `delete(id)` | `string` | `Promise<void>` | `NotFoundError`, `StorageError` |
-| `setStatus(id, status)` | `string`, `ACTIVA \| PAUSADA` | `Promise<Suscripcion>` | `NotFoundError`, `StorageError` |
-| `clear()` | — | `Promise<void>` | `StorageError` |
+| Método                  | Entrada                               | Salida                                                            | Errores que puede propagar                         |
+| ----------------------- | ------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------- |
+| `findAll()`             | —                                     | `Promise<Suscripcion[]>` ordenado por `nextChargeDate` ascendente | `StorageError`                                     |
+| `findById(id)`          | `string`                              | `Promise<Suscripcion \| null>`                                    | `StorageError`                                     |
+| `create(data)`          | `SuscripcionNueva`                    | `Promise<Suscripcion>`                                            | `ValidationError`, `StorageError`                  |
+| `update(id, changes)`   | `string`, parcial de campos editables | `Promise<Suscripcion>`                                            | `NotFoundError`, `ValidationError`, `StorageError` |
+| `delete(id)`            | `string`                              | `Promise<void>`                                                   | `NotFoundError`, `StorageError`                    |
+| `setStatus(id, status)` | `string`, `ACTIVA \| PAUSADA`         | `Promise<Suscripcion>`                                            | `NotFoundError`, `StorageError`                    |
+| `clear()`               | —                                     | `Promise<void>`                                                   | `StorageError`                                     |
 
 `update` acepta solo los campos editables (`name`, `amount`, `frequency`,
 `category`, `nextChargeDate`); el estado se modifica únicamente por
@@ -284,12 +308,12 @@ en blanco, y el resto de la aplicación sigue operable con el estado vacío.
 
 #### Puntos de captura de errores
 
-| Origen | Tipo | Destino en la UI |
-|--------|------|-------------------|
-| Validación de alta/edición | `ValidationError` con `errors: { campo: mensaje }` | Mensaje bajo el campo, foco al primer error (FR-001, FR-010, SC-009) |
-| Suscripción inexistente | `NotFoundError` | Mensaje informativo y se refresca el listado |
-| Lectura/escritura corrupta o no disponible | `StorageCorruptedError`, `StorageUnavailableError` | Banner con opción de reinicio (FR-035) |
-| Confirmación de eliminación cancelada | — | `ConfirmDialog` se cierra sin escribir en el repositorio (FR-011) |
+| Origen                                     | Tipo                                               | Destino en la UI                                                     |
+| ------------------------------------------ | -------------------------------------------------- | -------------------------------------------------------------------- |
+| Validación de alta/edición                 | `ValidationError` con `errors: { campo: mensaje }` | Mensaje bajo el campo, foco al primer error (FR-001, FR-010, SC-009) |
+| Suscripción inexistente                    | `NotFoundError`                                    | Mensaje informativo y se refresca el listado                         |
+| Lectura/escritura corrupta o no disponible | `StorageCorruptedError`, `StorageUnavailableError` | Banner con opción de reinicio (FR-035)                               |
+| Confirmación de eliminación cancelada      | —                                                  | `ConfirmDialog` se cierra sin escribir en el repositorio (FR-011)    |
 
 ### Capa de dominio (reglas de negocio puras)
 
@@ -298,26 +322,26 @@ Todo en `src/domain` es JavaScript puro: sin React, sin `localStorage`, sin
 (`{ today }`), lo que hace que los escenarios Gherkin con "Given hoy es
 2026-10-01" sean directamente unit tests.
 
-| Módulo | Responsabilidad | Requisitos |
-|--------|-----------------|-------------|
-| `dates/parseDate.js` | `YYYY-MM-DD` → partes numéricas, sin zona horaria | FR-005 |
-| `dates/addMonths.js` | Avance mensual/anual con clamp al último día del mes y soporte de año bisiesto | FR-005, Edge Cases |
-| `dates/diffDays.js` | Días calendario entre dos fechas (`hoy` inclusive) | FR-027, FR-032 |
-| `dates/endOfYear.js` | 31 de diciembre del año de referencia | FR-022 |
-| `catalog/categories.js` | Catálogo de 8 categorías y su etiqueta | FR-003 |
-| `catalog/frequencies.js` | `MENSUAL`/`ANUAL` y etiqueta visible | FR-002 |
+| Módulo                                  | Responsabilidad                                                                         | Requisitos                             |
+| --------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------- |
+| `dates/parseDate.js`                    | `YYYY-MM-DD` → partes numéricas, sin zona horaria                                       | FR-005                                 |
+| `dates/addMonths.js`                    | Avance mensual/anual con clamp al último día del mes y soporte de año bisiesto          | FR-005, Edge Cases                     |
+| `dates/diffDays.js`                     | Días calendario entre dos fechas (`hoy` inclusive)                                      | FR-027, FR-032                         |
+| `dates/endOfYear.js`                    | 31 de diciembre del año de referencia                                                   | FR-022                                 |
+| `catalog/categories.js`                 | Catálogo de 8 categorías y su etiqueta                                                  | FR-003                                 |
+| `catalog/frequencies.js`                | `MENSUAL`/`ANUAL` y etiqueta visible                                                    | FR-002                                 |
 | `subscriptions/validateSubscription.js` | `{ isValid, errors }` por campo; reglas de nombre, monto, frecuencia, categoría y fecha | FR-001, FR-002, FR-003, FR-004, FR-010 |
-| `subscriptions/createSubscription.js` | Normaliza entrada, genera `id`, fija `status: "ACTIVA"` y `createdAt` | FR-001, FR-006, FR-007 |
-| `subscriptions/applyChanges.js` | Aplica un parche válido preservando `id`, `status` y `createdAt` | FR-008, FR-009 |
-| `subscriptions/occurrences.js` | `nextOccurrence(subscription, from)` y `occurrencesBetween(subscription, from, to)` | FR-005, FR-022, FR-015 |
-| `metrics/monthlyEquivalent.js` | Estandarización por frecuencia | FR-020 |
-| `metrics/summary.js` | Agrega total mensual, anualizado, conteos y distribución | FR-020, FR-023, FR-024 |
-| `metrics/distribution.js` | Porcentajes por categoría con resto mayor; omite categorías sin gasto | FR-021 |
-| `metrics/annualProjection.js` | Suma de ocurrencias desde hoy hasta el 31 de diciembre | FR-022 |
-| `alerts/upcomingRenewals.js` | Suscripciones activas dentro de la ventana de 7 días, ordenadas | FR-027, FR-028, FR-029, FR-030 |
-| `alerts/describeRenewal.js` | Texto "hoy", "en N días", "hace N días" | FR-028, FR-032 |
-| `formatters/money.js` | `formatMoney(value, preferences)` con símbolo configurable y 2 decimales | FR-004, SC-003 |
-| `formatters/date.js` | Fechas legibles y días restantes | FR-012, FR-028 |
+| `subscriptions/createSubscription.js`   | Normaliza entrada, genera `id`, fija `status: "ACTIVA"` y `createdAt`                   | FR-001, FR-006, FR-007                 |
+| `subscriptions/applyChanges.js`         | Aplica un parche válido preservando `id`, `status` y `createdAt`                        | FR-008, FR-009                         |
+| `subscriptions/occurrences.js`          | `nextOccurrence(subscription, from)` y `occurrencesBetween(subscription, from, to)`     | FR-005, FR-022, FR-015                 |
+| `metrics/monthlyEquivalent.js`          | Estandarización por frecuencia                                                          | FR-020                                 |
+| `metrics/summary.js`                    | Agrega total mensual, anualizado, conteos y distribución                                | FR-020, FR-023, FR-024                 |
+| `metrics/distribution.js`               | Porcentajes por categoría con resto mayor; omite categorías sin gasto                   | FR-021                                 |
+| `metrics/annualProjection.js`           | Suma de ocurrencias desde hoy hasta el 31 de diciembre                                  | FR-022                                 |
+| `alerts/upcomingRenewals.js`            | Suscripciones activas dentro de la ventana de 7 días, ordenadas                         | FR-027, FR-028, FR-029, FR-030         |
+| `alerts/describeRenewal.js`             | Texto "hoy", "en N días", "hace N días"                                                 | FR-028, FR-032                         |
+| `formatters/money.js`                   | `formatMoney(value, preferences)` con símbolo configurable y 2 decimales                | FR-004, SC-003                         |
+| `formatters/date.js`                    | Fechas legibles y días restantes                                                        | FR-012, FR-028                         |
 
 Con cero suscripciones, `summary` devuelve ceros y una distribución vacía sin
 dividir por cero en ningún punto (FR-026, SC-010).
@@ -343,24 +367,24 @@ dividir por cero en ningún punto (FR-026, SC-010).
 
 ### Componentes de interfaz
 
-| Componente | Responsabilidad | Requisitos |
-|------------|-----------------|-------------|
-| `App.jsx` | Monta proveedores y la composición de secciones | — |
-| `layout/AppHeader.jsx` | Título, moneda configurada y total anualizado | FR-023 |
-| `layout/SectionNav.jsx` | Cambio de sección (Suscripciones / Panel / Alertas) | — |
-| `subscriptions/SubscriptionList.jsx` | Lista ordenada por próximo cobro | FR-012, FR-013 |
-| `subscriptions/SubscriptionRow.jsx` | Fila: nombre, monto, frecuencia, categoría, próximo cobro, estado, atrasada | FR-012, FR-015 |
-| `subscriptions/SubscriptionForm.jsx` | Alta y edición con validación en línea | FR-007, FR-008, FR-009, FR-010 |
-| `subscriptions/SubscriptionActions.jsx` | Pausar, reanudar, editar, eliminar | FR-016, FR-017 |
-| `subscriptions/ConfirmDialog.jsx` | Confirmación de eliminación | FR-011 |
-| `subscriptions/EmptyState.jsx` | Estado vacío accionable | FR-014 |
-| `dashboard/DashboardPanel.jsx` | Orquesta las tarjetas del panel | FR-020, FR-026 |
-| `dashboard/MetricCard.jsx` | Total mensual, anualizado, proyección anual, conteos | FR-020, FR-022, FR-023, FR-024 |
-| `dashboard/CategoryDistribution.jsx` | Barras de porcentaje por categoría | FR-021 |
-| `alerts/AlertsSection.jsx` | Lista de alertas y estado "sin cobros próximos" | FR-027, FR-031 |
-| `alerts/RenewalAlertCard.jsx` | Monto, fecha y días restantes | FR-028, FR-030 |
-| `common/Field.jsx`, `Button.jsx`, `Badge.jsx` | Primitivas visuales reutilizables | — |
-| `common/StorageErrorBanner.jsx` | Mensaje de error de almacenamiento con reinicio | FR-035 |
+| Componente                                    | Responsabilidad                                                             | Requisitos                     |
+| --------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------ |
+| `App.jsx`                                     | Monta proveedores y la composición de secciones                             | —                              |
+| `layout/AppHeader.jsx`                        | Título, moneda configurada y total anualizado                               | FR-023                         |
+| `layout/SectionNav.jsx`                       | Cambio de sección (Suscripciones / Panel / Alertas)                         | —                              |
+| `subscriptions/SubscriptionList.jsx`          | Lista ordenada por próximo cobro                                            | FR-012, FR-013                 |
+| `subscriptions/SubscriptionRow.jsx`           | Fila: nombre, monto, frecuencia, categoría, próximo cobro, estado, atrasada | FR-012, FR-015                 |
+| `subscriptions/SubscriptionForm.jsx`          | Alta y edición con validación en línea                                      | FR-007, FR-008, FR-009, FR-010 |
+| `subscriptions/SubscriptionActions.jsx`       | Pausar, reanudar, editar, eliminar                                          | FR-016, FR-017                 |
+| `subscriptions/ConfirmDialog.jsx`             | Confirmación de eliminación                                                 | FR-011                         |
+| `subscriptions/EmptyState.jsx`                | Estado vacío accionable                                                     | FR-014                         |
+| `dashboard/DashboardPanel.jsx`                | Orquesta las tarjetas del panel                                             | FR-020, FR-026                 |
+| `dashboard/MetricCard.jsx`                    | Total mensual, anualizado, proyección anual, conteos                        | FR-020, FR-022, FR-023, FR-024 |
+| `dashboard/CategoryDistribution.jsx`          | Barras de porcentaje por categoría                                          | FR-021                         |
+| `alerts/AlertsSection.jsx`                    | Lista de alertas y estado "sin cobros próximos"                             | FR-027, FR-031                 |
+| `alerts/RenewalAlertCard.jsx`                 | Monto, fecha y días restantes                                               | FR-028, FR-030                 |
+| `common/Field.jsx`, `Button.jsx`, `Badge.jsx` | Primitivas visuales reutilizables                                           | —                              |
+| `common/StorageErrorBanner.jsx`               | Mensaje de error de almacenamiento con reinicio                             | FR-035                         |
 
 Estados visuales distinguished con Tailwind: `ACTIVA` (verde), `PAUSADA`
 (ámbar, atenuada), cobro `atrasado` (rojo), `hoy` (rojo), `en N días` (ámbar),
@@ -368,47 +392,47 @@ Estados visuales distinguished con Tailwind: `ACTIVA` (verde), `PAUSADA`
 
 ### Riesgos y mitigaciones
 
-| Riesgo | Impacto | Mitigación |
-|--------|---------|------------|
-| Suma de `float` deriva centavos (FR-004, SC-003) | Métricas con 0.01 de diferencia | Agregar sin redondear, redondear solo en `formatMoney`, y comparar en pruebas con tolerancia de 0.01 |
-| Zona horaria mueve la fecha un día | Alertas y "atrasado" incorrectos | Fechas como cadenas `YYYY-MM-DD` y aritmética de calendario propia; prohibido `new Date(iso)` para parsear |
-| Clamp de fin de mes mal implementado | Ocurrencias en fechas inexistentes | `addMonths` con clamp al último día del mes, cubierto por casos de bisiesto y día 31 |
-| Crecimiento del documento en `localStorage` | Cuota excedida | Volumen objetivo ≤ 1.000 registros (~200 kB); `StorageUnavailableError` manejado con mensaje y opción de reinicio |
-| Datos persistidos por una versión anterior | JSON ilegible tras un cambio | `schemaVersion` + cadena de migraciones puras |
-| Métricas recalculadas desde distintos lugares | Divergencia entre panel y alertas | Una sola función `summary` en dominio, consumida por todos los selectores |
+| Riesgo                                           | Impacto                            | Mitigación                                                                                                        |
+| ------------------------------------------------ | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Suma de `float` deriva centavos (FR-004, SC-003) | Métricas con 0.01 de diferencia    | Agregar sin redondear, redondear solo en `formatMoney`, y comparar en pruebas con tolerancia de 0.01              |
+| Zona horaria mueve la fecha un día               | Alertas y "atrasado" incorrectos   | Fechas como cadenas `YYYY-MM-DD` y aritmética de calendario propia; prohibido `new Date(iso)` para parsear        |
+| Clamp de fin de mes mal implementado             | Ocurrencias en fechas inexistentes | `addMonths` con clamp al último día del mes, cubierto por casos de bisiesto y día 31                              |
+| Crecimiento del documento en `localStorage`      | Cuota excedida                     | Volumen objetivo ≤ 1.000 registros (~200 kB); `StorageUnavailableError` manejado con mensaje y opción de reinicio |
+| Datos persistidos por una versión anterior       | JSON ilegible tras un cambio       | `schemaVersion` + cadena de migraciones puras                                                                     |
+| Métricas recalculadas desde distintos lugares    | Divergencia entre panel y alertas  | Una sola función `summary` en dominio, consumida por todos los selectores                                         |
 
 ## Constitution Check
 
 **GATE: debe pasar antes de la Fase 0 de investigación. Reevaluar después de
 la Fase 1 de diseño.**
 
-*Estado verificado:* constitución ratificada en
-`opencode/.specify/memory/constitution.md`, **versión 2.0.0** (Ratified y Last
+_Estado verificado:_ constitución ratificada en
+`opencode/.specify/memory/constitution.md`, **versión 1.1.0** (Ratified y Last
 Amended 2026-10-01).
 
 **Resultado de la puerta: APROBADA.** Cada principio se cumple en el diseño
 planteado:
 
-| Principio de la constitución v2.0.0 | Cumplimiento en el plan |
-|----------------------------------------|--------------------------|
+| Principio de la constitución v1.1.0               | Cumplimiento en el plan                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **I. El Repositorio es la Única Puerta de Datos** | Contrato asíncrono `SubscriptionRepository` (7 métodos, todos `Promise`); la UI nunca accede a `localStorage`; solo `src/services` invoca el repositorio; selección del adaptador aislada en `createRepository()`; storage inyectado para poder probar sin navegador; errores tipados (`ValidationError`, `NotFoundError`, `StorageError`) mapeados a mensajes en español |
-| **II. Dominio Puro y Aisolado** | `src/domain/**` sin React, sin plataforma y sin E/S; `today` inyectado en toda función de fechas y métricas; `id` inyectable en `createSubscription`; fechas como cadenas `YYYY-MM-DD` con aritmética propia y clamp de fin de mes; redondeo solo en `formatters`; cobertura ≥ 90 % en dominio |
-| **III. Tailwind CSS como Estilo Exclusivo** | Estilos con utilidades Tailwind; el único `.css` del árbol es `src/styles/index.css` (import de Tailwind + `@theme` opcional); sin estilos en línea, sin CSS Modules ni CSS-in-JS; sin librería de gráficos; estados visuales distinguibles por clase, texto e icono; usable desde 360 px |
-| **IV. Estilo y Nomenclatura** | PascalCase en componentes, camelCase en funciones, UPPER_SNAKE_CASE en catálogos, `handle` en eventos, `is`/`has` en booleanos; prefijo `handle*` y singular/plural respetados; linter como puerta G-05 |
-| **V. Código en Inglés, Producto en Español** | Todos los nombres de archivo, símbolos y claves del documento JSON están en inglés; los textos de UI, mensajes de validación y catálogos quedan en español y se traducen desde los módulos `catalog/categories.js` y `catalog/frequencies.js` |
+| **II. Dominio Puro y Aisolado**                   | `src/domain/**` sin React, sin plataforma y sin E/S; `today` inyectado en toda función de fechas y métricas; `id` inyectable en `createSubscription`; fechas como cadenas `YYYY-MM-DD` con aritmética propia y clamp de fin de mes; redondeo solo en `formatters`; cobertura ≥ 90 % en dominio                                                                            |
+| **III. Tailwind CSS como Estilo Exclusivo**       | Estilos con utilidades Tailwind; el único `.css` del árbol es `src/styles/index.css` (import de Tailwind + `@theme` opcional); sin estilos en línea, sin CSS Modules ni CSS-in-JS; sin librería de gráficos; estados visuales distinguibles por clase, texto e icono; usable desde 360 px                                                                                 |
+| **IV. Estilo y Nomenclatura**                     | PascalCase en componentes, camelCase en funciones, UPPER_SNAKE_CASE en catálogos, `handle` en eventos, `is`/`has` en booleanos; prefijo `handle*` y singular/plural respetados; linter como puerta G-05                                                                                                                                                                   |
+| **V. Código en Inglés, Producto en Español**      | Todos los nombres de archivo, símbolos y claves del documento JSON están en inglés; los textos de UI, mensajes de validación y catálogos quedan en español y se traducen desde los módulos `catalog/categories.js` y `catalog/frequencies.js`                                                                                                                             |
 
-**Puertas de calidad que este plan debe satisfacer** (constitución v2.0.0,
+**Puertas de calidad que este plan debe satisfacer** (constitución v1.1.0,
 sección "Restricciones de Implementación y Puertas de Calidad"):
 
-| Puerta | Cómo la resuelve el plan |
-|--------|---------------------------|
-| G-01 Trazabilidad | Tabla "Trazabilidad Especificación → Implementación → Pruebas" |
-| G-02 Pruebas del dominio | `tests/unit/domain/**` con cobertura ≥ 90 % |
-| G-03 Contrato de repositorio | `tests/contract/repositoryContract.test.js` reutilizable por cualquier adaptador |
-| G-04 Pruebas de historia | `tests/integration/*Flow.test.jsx`, una suite por historia P1 a P5 |
-| G-05 Lint y formato | `eslint` + `eslint-plugin-react-hooks` en `eslint.config.js` |
-| G-06 Pruebas completas | Suite completa verde antes de declarar una funcionalidad terminada |
-| G-07 Casos límite | Casos del spec cubiertos en `dates.test.js`, `metrics.test.js`, `alerts.test.js`, `parseDocument.test.js` y `persistenceFlow.test.jsx` |
+| Puerta                       | Cómo la resuelve el plan                                                                                                                                                                                                                                                 |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| G-01 Trazabilidad            | Tabla "Trazabilidad Especificación → Implementación → Pruebas"                                                                                                                                                                                                           |
+| G-02 Pruebas del dominio     | `tests/unit/domain/**` con cobertura ≥ 90 %                                                                                                                                                                                                                              |
+| G-03 Contrato de repositorio | Contrato escrito en `specs/001-expensiveManager/contracts/subscription-repository.md` (tarea T038) más la suite reutilizable `tests/contract/repositoryContract.test.js` (tarea T049), que debe pasar cualquier adaptador                                                |
+| G-04 Pruebas de historia     | `tests/integration/*Flow.test.jsx`, una suite por historia P1 a P5                                                                                                                                                                                                       |
+| G-05 Lint y formato          | `eslint` 10 (configuración plana en `eslint.config.js`, con `eslint-plugin-react-hooks` y reglas que prohíben `localStorage` fuera de `src/data/`) + `prettier` 3 con `.prettierrc` y `.prettierignore`; puertas ejecutables con `npm run lint` y `npm run format:check` |
+| G-06 Pruebas completas       | Suite completa verde antes de declarar una funcionalidad terminada                                                                                                                                                                                                       |
+| G-07 Casos límite            | Casos del spec cubiertos en `dates.test.js`, `metrics.test.js`, `alerts.test.js`, `parseDocument.test.js` y `persistenceFlow.test.jsx`                                                                                                                                   |
 
 **Sin violaciones que justificar.** No hay entradas pendientes en "Complexity
 Tracking" por incumplimiento de la constitución: las cinco desviaciones
@@ -422,15 +446,17 @@ constitución exige o habilita, no excepciones a ella.
 
 ```text
 specs/001-expensiveManager/
-├── plan.md              # Este archivo
-├── spec.md              # Especificación funcional (FR-001 a FR-036 en Gherkin)
-├── research.md          # Fase 0: decisiones de stack y alternativas evaluadas
-├── data-model.md        # Fase 1: entidad Suscripción, derivados y reglas de formato
-├── quickstart.md        # Fase 1: guía de validación end-to-end
-├── contracts/
-│   └── subscription-repository.md   # Contrato del repositorio (port) y reglas de error
-└── tasks.md             # Fase 2: (/speckit.tasks) — NO creado por /speckit.plan
+├── plan.md              # Este archivo (existe)
+├── spec.md              # Especificación funcional (FR-001 a FR-036 en Gherkin) (existe)
+├── tasks.md             # Plan de tareas T001 a T100 (existe)
+├── quickstart.md        # PENDIENTE (tarea T095): guía de validación end-to-end
+└── contracts/
+    └── subscription-repository.md   # PENDIENTE (tarea T038): contrato del puerto y reglas de error
 ```
+
+`research.md` y `data-model.md` se descartaron a propósito: para este MVP el
+modelo de datos y las decisiones de stack ya están fijados en este `plan.md` y
+en `spec.md`, que son la fuente de verdad.
 
 ### Source Code (repository root)
 
@@ -438,16 +464,20 @@ specs/001-expensiveManager/
 expenseManager/
 ├── index.html
 ├── package.json
-├── vite.config.js
-├── tailwind.config.js
-├── postcss.config.js
+├── vite.config.js                        # React + Tailwind + alias @ + config de Vitest
+├── jsconfig.json                         # Alias "@/*": ["src/*"]
 ├── eslint.config.js
+├── .prettierrc
+├── .prettierignore
+├── .editorconfig
+├── .gitignore
 ├── README.md
 ├── src/
 │   ├── main.jsx
 │   ├── App.jsx
+│   ├── App.test.jsx                      # Prueba de humo (Fase 1)
 │   ├── styles/
-│   │   └── index.css
+│   │   └── index.css                     # Único .css del proyecto (Tailwind + @theme)
 │   ├── domain/                          # Reglas de negocio puras (sin React, sin E/S)
 │   │   ├── catalog/
 │   │   │   ├── categories.js
@@ -524,7 +554,7 @@ expenseManager/
 │           ├── Badge.jsx
 │           └── StorageErrorBanner.jsx
 └── tests/
-    ├── setup.js                         # jest-dom, limpieza de localStorage entre tests
+    ├── setupTests.js                     # jest-dom, limpieza de localStorage entre tests
     ├── unit/
     │   ├── domain/
     │   │   ├── dates.test.js            # bisiestos, clamp fin de mes, diffDays
@@ -551,14 +581,14 @@ expenseManager/
 
 ### Trazabilidad Especificación → Implementación → Pruebas
 
-| Historia | Requisitos | Módulos principales | Suite |
-|----------|-------------|----------------------|-------|
-| P1 Registrar y mantener suscripciones | FR-001, FR-002, FR-003, FR-004, FR-007 a FR-015 | `validateSubscription`, `createSubscription`, `applyChanges`, `subscriptionService`, `SubscriptionForm`, `SubscriptionList`, `ConfirmDialog` | `unit/domain/validateSubscription.test.js`, `integration/crudFlow.test.jsx` |
-| P2 Pausar y reanudar | FR-006, FR-016, FR-017, FR-018, FR-019 | `subscriptionService.setStatus`, `subscriptionsReducer`, `useMetrics` | `integration/pauseFlow.test.jsx` |
-| P3 Panel de métricas | FR-020 a FR-026 | `metrics/*`, `dashboard/*` | `unit/domain/metrics.test.js`, `integration/dashboardFlow.test.jsx` |
-| P4 Alertas de renovación | FR-027 a FR-032 | `alerts/*`, `useToday`, `RenewalAlertCard` | `unit/domain/alerts.test.js`, `integration/alertsFlow.test.jsx` |
-| P5 Persistencia | FR-033 a FR-036 | `LocalStorageSubscriptionRepository`, `parseDocument`, `migrations`, `StorageErrorBanner` | `unit/data/*.test.js`, `contract/repositoryContract.test.js`, `integration/persistenceFlow.test.jsx` |
-| Transversal | SC-001 a SC-010 | `formatters/money`, `summary` (caso vacío) | `unit/domain/metrics.test.js`, `unit/domain/formatters.test.js` |
+| Historia                              | Requisitos                                      | Módulos principales                                                                                                                          | Suite                                                                                                |
+| ------------------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| P1 Registrar y mantener suscripciones | FR-001, FR-002, FR-003, FR-004, FR-007 a FR-015 | `validateSubscription`, `createSubscription`, `applyChanges`, `subscriptionService`, `SubscriptionForm`, `SubscriptionList`, `ConfirmDialog` | `unit/domain/validateSubscription.test.js`, `integration/crudFlow.test.jsx`                          |
+| P2 Pausar y reanudar                  | FR-006, FR-016, FR-017, FR-018, FR-019          | `subscriptionService.setStatus`, `subscriptionsReducer`, `useMetrics`                                                                        | `integration/pauseFlow.test.jsx`                                                                     |
+| P3 Panel de métricas                  | FR-020 a FR-026                                 | `metrics/*`, `dashboard/*`                                                                                                                   | `unit/domain/metrics.test.js`, `integration/dashboardFlow.test.jsx`                                  |
+| P4 Alertas de renovación              | FR-027 a FR-032                                 | `alerts/*`, `useToday`, `RenewalAlertCard`                                                                                                   | `unit/domain/alerts.test.js`, `integration/alertsFlow.test.jsx`                                      |
+| P5 Persistencia                       | FR-033 a FR-036                                 | `LocalStorageSubscriptionRepository`, `parseDocument`, `migrations`, `StorageErrorBanner`                                                    | `unit/data/*.test.js`, `contract/repositoryContract.test.js`, `integration/persistenceFlow.test.jsx` |
+| Transversal                           | SC-001 a SC-010                                 | `formatters/money`, `summary` (caso vacío)                                                                                                   | `unit/domain/metrics.test.js`, `unit/domain/formatters.test.js`                                      |
 
 **Estrategia de pruebas**: el dominio cubre la mayor parte de los FR con
 pruebas puras y rápidas (sin React), lo que hace que un fallo apunte a una regla
@@ -583,10 +613,10 @@ Gherkin sin navegador.
 > **Se completa solo porque hay desviaciones justificadas frente a la opción
 > más simple posible para un MVP local.**
 
-| Violation | Por qué es necesario | Alternativa más simple descartada porque |
-|-----------|----------------------|----------------------------------------|
-| Patrón Repositorio con contrato asíncrono y adaptador inyectado | Es un compromiso explícito del README y el requisito FR-036 exige que los resultados no dependan del almacenamiento; además es lo que permite testear sin navegador | Leer y escribir `localStorage` desde los componentes: es menos código hoy, pero deja la lógica pegada al navegador, impide probar con `FakeStorage` y obligaría a reescribir componentes al migrar a una base de datos |
-| Capa de dominio con módulos puros separados de `state` y `components` | 36 FR, de los cuales las métricas (FR-020 a FR-024) exigen exactitud a centavo; aislar el cálculo permite verificarlo exhaustivamente sin montar la interfaz | Calcular métricas dentro de los componentes: elimina archivos, pero mezcla presentación con reglas de negocio, impide reutilizar `summary` entre panel y alertas y hace que un error de cálculo solo aparezca en pantalla |
-| Aritmética de fechas propia en vez de una librería | El spec exige clamp al último día del mes (Edge Cases), años bisiestos (FR-005) y días restantes exactos (FR-028) | `date-fns` cubre parte, pero el clamp y el cálculo de ocurrencias habría que escribirlos igual; ~60 líneas propias, probadas con casos del spec, sin dependencia externa |
-| Contexto único con `useReducer` en vez de estado local por componente | FR-025 y FR-019 exigen que panel, listado y alertas se recalculen juntos tras cualquier operación, sin recarga | Estado disperso con `useState` por componente y eventos padre entre ellos: produce divergencia entre vistas y viola SC-002 |
-| Versionado del documento y cadena de migraciones | Agregar un campo en una versión futura no debe obligar al usuario a borrar sus gastos (spec: los datos del usuario se conservan) | Sin `schemaVersion`, cualquier cambio de esquema invalida el documento y el usuario pierde todo su registro |
+| Violation                                                             | Por qué es necesario                                                                                                                                                | Alternativa más simple descartada porque                                                                                                                                                                                  |
+| --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Patrón Repositorio con contrato asíncrono y adaptador inyectado       | Es un compromiso explícito del README y el requisito FR-036 exige que los resultados no dependan del almacenamiento; además es lo que permite testear sin navegador | Leer y escribir `localStorage` desde los componentes: es menos código hoy, pero deja la lógica pegada al navegador, impide probar con `FakeStorage` y obligaría a reescribir componentes al migrar a una base de datos    |
+| Capa de dominio con módulos puros separados de `state` y `components` | 36 FR, de los cuales las métricas (FR-020 a FR-024) exigen exactitud a centavo; aislar el cálculo permite verificarlo exhaustivamente sin montar la interfaz        | Calcular métricas dentro de los componentes: elimina archivos, pero mezcla presentación con reglas de negocio, impide reutilizar `summary` entre panel y alertas y hace que un error de cálculo solo aparezca en pantalla |
+| Aritmética de fechas propia en vez de una librería                    | El spec exige clamp al último día del mes (Edge Cases), años bisiestos (FR-005) y días restantes exactos (FR-028)                                                   | `date-fns` cubre parte, pero el clamp y el cálculo de ocurrencias habría que escribirlos igual; ~60 líneas propias, probadas con casos del spec, sin dependencia externa                                                  |
+| Contexto único con `useReducer` en vez de estado local por componente | FR-025 y FR-019 exigen que panel, listado y alertas se recalculen juntos tras cualquier operación, sin recarga                                                      | Estado disperso con `useState` por componente y eventos padre entre ellos: produce divergencia entre vistas y viola SC-002                                                                                                |
+| Versionado del documento y cadena de migraciones                      | Agregar un campo en una versión futura no debe obligar al usuario a borrar sus gastos (spec: los datos del usuario se conservan)                                    | Sin `schemaVersion`, cualquier cambio de esquema invalida el documento y el usuario pierde todo su registro                                                                                                               |
