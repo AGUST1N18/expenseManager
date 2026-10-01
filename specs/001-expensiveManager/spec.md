@@ -305,9 +305,9 @@ Feature: Gasto real mensualizado
     Examples:
       | nombre   | monto  | frecuencia | total   |
       | Netflix  | 10000  | Mensual    | 10000   |
-      | Adobe CC | 120000 | Anual      | 20000   |
-      | Dominio  | 24000  | Anual      | 4000    |
-      | Mixto    | 35000  | Anual      | 5833.33 |
+      | Adobe CC | 120000 | Anual      | 10000   |
+      | Dominio  | 24000  | Anual      | 2000    |
+      | Mixto    | 35000  | Anual      | 2916.67 |
 
   Scenario: El total mensualiza solo suscripciones activas
     Given el usuario "Mauro" tiene "Netflix" activa por 10000 y "Gimnasio" pausada por 25000
@@ -572,11 +572,132 @@ Feature: Persistencia de la información
     And no ve una lista de suscripciones corrupta ni una pantalla en blanco
 ```
 
+### User Story 6 - Registrar lo que ya pagué y dar de baja lo que cancelé (Priority: P6)
+
+Como persona usuaria, quiero marcar una suscripción como pagada para que su próximo
+cobro se calcule solo según su frecuencia, y cancelar una suscripción que ya no
+renueva para que deje de contar sin perder el historial, para que el panel refleje
+exactamente lo que estoy pagando hoy y no lo que dejé atrás.
+
+**Why this priority**: Sin esto el usuario tiene que calcular y editar la fecha a
+mano cada renewal, y la única forma de sacar de la cuenta un servicio cancelado es
+borrar el registro y perder la memoria de lo que pagó. Ambas acciones cierran el
+ciclo de vida de una suscripción sobre datos que el P1 ya garantiza, por lo que no
+bloquean ninguna historia anterior, pero dependen de ellas.
+
+**Independent Test**: Se prueba registrando una suscripción mensual con próximo
+cobro en el pasado, marcándola como pagada y verificando que el próximo cobro pasa
+a la primera ocurrencia posterior a hoy y queda registrada la fecha del pago; y se
+prueba cancelando una suscripción y verificando que queda en estado "Cancelada" con
+su fecha de baja, fuera de las métricas y de las alertas, y que al reactivarla vuelve
+a computar.
+
+**Acceptance Scenarios**:
+
+```gherkin
+Feature: Registro de pagos y baja de suscripciones
+  Como usuario que renueva servicios y también los da de baja
+  Quiero confirmar los pagos y cancelar lo que ya no uso
+  Para que mis métricas reflejen la realidad y no mi memoria
+
+  Background:
+    Given el usuario "Mauro" tiene registrada "Netflix" con monto 15000,
+      frecuencia "Mensual", categoría "Entretenimiento" y estado "Activa"
+
+  Scenario: Marcar como pagada una suscripción al día
+    Given hoy es 2026-10-01
+    And "Netflix" tiene próximo cobro 2026-10-01
+    When marca "Netflix" como pagada
+    Then su próximo cobro pasa a 2026-11-01
+    And queda registrada la fecha del pago 2026-10-01
+
+  Scenario: Marcar como pagada una suscripción mensual atrasada
+    Given hoy es 2026-10-01
+    And "Netflix" tiene próximo cobro 2026-07-15
+    When marca "Netflix" como pagada
+    Then su próximo cobro pasa a 2026-10-15
+    And la suscripción deja de figurar como atrasada
+
+  Scenario: Marcar como pagada una suscripción anual
+    Given hoy es 2026-10-01
+    And "Adobe" tiene frecuencia "Anual" y próximo cobro 2026-01-15
+    When marca "Adobe" como pagada
+    Then su próximo cobro pasa a 2027-01-15
+
+  Scenario: Marcar como pagada antes de la fecha de cobro
+    Given hoy es 2026-10-01
+    And "Netflix" tiene próximo cobro 2026-12-15
+    When marca "Netflix" como pagada
+    Then su próximo cobro pasa a 2027-01-15
+
+  Scenario: Marcar como pagada una suscripción que no está activa
+    Given "Netflix" está en estado "Pausada"
+    When intenta marcar "Netflix" como pagada
+    Then la acción no está disponible
+    And su próximo cobro no cambia
+
+  Scenario: Cancelar una suscripción
+    Given hoy es 2026-10-01
+    When cancela "Netflix" y confirma
+    Then su estado pasa a "Cancelada"
+    And queda registrada la fecha de baja 2026-10-01
+    And deja de computar en el gasto real mensual
+    And deja de generar alertas de renovación
+    And su monto, frecuencia, categoría y próximo cobro se conservan
+
+  Scenario: Cancelar una suscripción ya cancelada
+    Given "Netflix" está en estado "Cancelada"
+    When intenta cancelar "Netflix"
+    Then la acción no está disponible
+
+  Scenario: Reactivar una suscripción cancelada
+    Given "Netflix" está en estado "Cancelada" con fecha de baja 2026-10-01
+    When reactiva "Netflix"
+    Then su estado pasa a "Activa"
+    And su fecha de baja se elimina
+    And vuelve a computar en el gasto real mensual
+    And vuelve a ser elegible para alertas de renovación
+
+  Scenario: El registro de pagos se refleja de inmediato en las vistas
+    Given el usuario tiene el panel visible con 1 activa y 0 pausadas
+    And "Netflix" tiene próximo cobro 2026-10-01
+    When marca "Netflix" como pagada
+    Then el panel recalcula las métricas sin requerir recarga
+    And el listado muestra la fecha del último pago
+
+  Scenario: Cancelación reflejada de inmediato en las vistas
+    Given el usuario tiene el panel visible con 1 activa
+    When cancela "Netflix" y confirma
+    Then el panel muestra 0 activas, 0 pausadas y 1 cancelada
+    And el gasto real mensual pasa a 0 sin requerir recarga
+```
+
 ### Edge Cases
 
 - **Sin suscripciones**: todos los totales son 0, la distribución y las alertas
   muestran estados vacíos con acción de registro; nunca aparecen valores sin
   definir, `NaN` ni divisiones por cero.
+- **Solo hay suscripciones canceladas**: el panel no está vacío porque hay
+  registros, muestra 0 activas, 0 pausadas y el total de canceladas, con totales
+  en 0 y la distribución y las alertas en su estado vacío.
+- **Marcar como pagada un cobro atrasado**: el próximo cobro no queda en el
+  pasado. Avanza por periodos hasta la **primera ocurrencia posterior a hoy**, de
+  modo que marcar un cobro de julio el 1 de octubre lleva el próximo cobro al 15
+  de noviembre y no al 15 de agosto. Siempre avanza al menos un periodo, incluso
+  cuando el cobro cae exactamente hoy.
+- **Marcar como pagada antes de la fecha de cobro**: cuenta como pago
+  anticipado y avanza un periodo completo, aunque el cobro anterior todavía no
+  haya ocurrido.
+- **Marcar como pagada varias veces**: cada confirmación avanza un periodo
+  adicional a partir del próximo cobro vigente, nunca desde el pago anterior.
+- **Marcar como pagada una suscripción pausada o cancelada**: la acción no está
+  disponible, porque una suscripción que no está activa no genera cobros. El
+  dominio rechaza la operación en lugar de dejar el próximo cobro sin cambios.
+- **Reactivar una suscripción cancelada cuyo próximo cobro ya pasó**: vuelve a
+  "Activa" con su próximo cobro original y se muestra como atrasada, porque el
+  dominio no inventa cobros ni modifica fechas al cambiar de estado.
+- **Cancelar y luego eliminar**: se puede eliminar una suscripción cancelada con
+  la misma confirmación que exige eliminar una activa.
 - **Monto anual no divisible por 12** (100000 → 8333.33): el cálculo agregado
   usa el valor sin redondear y solo el valor mostrado se redondea a 2 decimales.
 - **Reparto porcentual que no cierra en 100%** por redondeo (3 categorías
@@ -585,7 +706,12 @@ Feature: Persistencia de la información
   atrasado" y su próxima ocurrencia se calcula por periodicidad, sin duplicar
   cobros ni alterar el monto.
 - **Próximo cobro el día 31 en meses de 30 días**: la ocurrencia se ajusta al
-  último día del mes correspondiente.
+  último día del mes correspondiente. El ajuste afecta **solo a esa ocurrencia**:
+  una suscripción que cobra el 31 genera 31-01, 28-02, 31-03 y 30-04, porque el
+  día de cobro se calcula siempre desde la fecha de origen y no encadenado desde
+  la fecha ya ajustada. Por lo mismo, tras confirmar un cobro el próximo cobro
+  guardado avanza por periodos desde la fecha de origen, no desde la fecha
+  ajustada, para que el día 31 no quede fijado en 28 para siempre.
 - **Próximo cobro a más de 12 meses**: no genera alertas ni se cuenta en la
   proyección del año en curso.
 - **Pausar dentro de la ventana de alerta**: la alerta desaparece en la misma
@@ -701,16 +827,24 @@ Rule: FR-005 La fecha de próximo cobro MUST persistir como fecha y MUST admitir
 ```
 
 ```gherkin
-Rule: FR-006 El estado de la suscripción MUST ser "Activa" o "Pausada"
+Rule: FR-006 El estado de la suscripción MUST ser "Activa", "Pausada" o "Cancelada"
   Scenario: Estado inicial
     Given el usuario registra una suscripción
     Then su estado es "Activa"
 
-  Scenario: Estados válidos para pausar y reanudar
-    Given el usuario tiene una suscripción en cualquiera de los dos estados
-    When ejecuta la acción de alternar estado
-    Then su estado pasa al estado contrario
-    And solo esos dos estados son válidos
+  Scenario: Estados válidos del ciclo de vida
+    Given el usuario tiene una suscripción en cualquiera de los tres estados
+    When consulta su listado
+    Then su estado es "Activa", "Pausada" o "Cancelada"
+    And "Pausada" y "Cancelada" no computan en el gasto real mensual
+    And "Cancelada" no genera alertas de renovación
+
+  Scenario: La cancelación conserva la información registrada
+    Given el usuario tiene "Netflix" con monto 15000, frecuencia "Mensual",
+      categoría "Entretenimiento" y próximo cobro 2026-10-01
+    When cancela "Netflix" y confirma
+    Then su monto, frecuencia, categoría y próximo cobro se conservan
+    And queda registrada la fecha de baja
 ```
 
 #### Alta y edición
@@ -799,6 +933,14 @@ Rule: FR-012 El listado MUST mostrar todos los datos relevantes de cada suscripc
     When consulta su listado
     Then cada fila muestra nombre, monto, frecuencia, categoría, próximo cobro y estado
     And se muestra el peso mensual equivalente cuando la frecuencia es "Anual"
+
+  Scenario: Suscripciones con pago registrado y con baja
+    Given el usuario tiene "Netflix" activa con próximo cobro 2026-11-01
+    And "Gimnasio" cancelada con fecha de baja 2026-10-01
+    When consulta su listado
+    Then "Netflix" muestra la fecha del último pago registrado
+    And "Gimnasio" muestra su fecha de baja
+    And las acciones disponibles dependen del estado de cada suscripción
 ```
 
 ```gherkin
@@ -885,7 +1027,7 @@ Rule: FR-020 El panel MUST mostrar el gasto real mensual estandarizado
       | n1       | m1    | f1     | n2      | m2    | f2     | total   |
       | Netflix  | 10000 | Mensual | Adobe   | 120000| Anual  | 20000   |
       | Netflix  | 10000 | Mensual | Dominio | 24000 | Anual  | 12000   |
-      | Adobe    | 35000 | Anual   | Dominio | 12000 | Anual  | 4583.33 |
+      | Adobe    | 35000 | Anual   | Dominio | 20000 | Anual  | 4583.33 |
 
   Scenario: Exclusión de pausadas
     Given el usuario tiene "Netflix" activa por 10000 y "Gimnasio" pausada por 25000
@@ -956,20 +1098,26 @@ Rule: FR-023 El panel MUST mostrar la referencia de gasto anualizado
   Scenario: Anualizado a partir del gasto mensual
     Given el usuario tiene "Netflix" activa por 15000 mensual y "Adobe" activa por 120000 anual
     When consulta la referencia de gasto anualizado
-    Then el valor mostrado es 180000
+    Then el valor mostrado es 300000
 ```
 
 ```gherkin
-Rule: FR-024 El panel MUST mostrar el conteo de suscripciones activas, pausadas y totales
+Rule: FR-024 El panel MUST mostrar el conteo de suscripciones activas, pausadas, canceladas y totales
   Scenario: Conteos
-    Given el usuario tiene 3 activas y 2 pausadas
+    Given el usuario tiene 3 activas, 2 pausadas y 1 cancelada
     When consulta el panel
-    Then se muestran 3 activas, 2 pausadas y 5 en total
+    Then se muestran 3 activas, 2 pausadas, 1 cancelada y 6 en total
 
   Scenario: Conteos en cero
     Given el usuario no tiene suscripciones
     When consulta el panel
-    Then se muestran 0 activas, 0 pausadas y 0 en total
+    Then se muestran 0 activas, 0 pausadas, 0 canceladas y 0 en total
+
+  Scenario: El total incluye las canceladas
+    Given el usuario tiene 1 activa y 1 cancelada
+    When consulta el panel
+    Then el total es 2
+    And la cancelada no aporta al gasto real mensual
 ```
 
 ```gherkin
@@ -985,6 +1133,8 @@ Rule: FR-025 El panel MUST recalcularse ante cualquier cambio en las suscripcion
       | registra una nueva suscripción |
       | edita el monto de una existente |
       | elimina una suscripción        |
+      | marca una suscripción como pagada |
+      | cancela una suscripción        |
       | pausa una suscripción          |
       | reanuda una suscripción        |
 ```
@@ -1118,13 +1268,143 @@ Rule: FR-036 La información persistida MUST ser independiente del origen de dat
     And el usuario no percibe diferencias de comportamiento
 ```
 
+#### Pago y baja de suscripciones
+
+```gherkin
+Rule: FR-037 El usuario MUST poder marcar una suscripción activa como pagada
+  Scenario: El próximo cobro avanza un periodo
+    Given hoy es 2026-10-01
+    And "Netflix" está activa con próximo cobro 2026-10-01 y frecuencia "Mensual"
+    When marca "Netflix" como pagada
+    Then su próximo cobro pasa a 2026-11-01
+    And queda registrada la fecha del pago 2026-10-01
+
+  Scenario Outline: El avance respeta la frecuencia
+    Given hoy es 2026-10-01
+    And la suscripción está activa con próximo cobro <ancla> y frecuencia "<frecuencia>"
+    When marca la suscripción como pagada
+    Then su próximo cobro pasa a <esperado>
+
+    Examples:
+      | frecuencia | ancla       | esperado    |
+      | Mensual    | 2026-10-01  | 2026-11-01  |
+      | Anual      | 2026-10-01  | 2027-10-01  |
+
+  Scenario: Un cobro atrasado salta al primer cobro posterior a hoy
+    Given hoy es 2026-10-01
+    And "Netflix" está activa con próximo cobro 2026-07-15 y frecuencia "Mensual"
+    When marca "Netflix" como pagada
+    Then su próximo cobro pasa a 2026-10-15
+    And deja de figurar como cobro atrasado
+
+  Scenario: El cobro atrasado salta al primer cobro futuro tras el día de pago
+    Given hoy es 2026-10-01
+    And "Netflix" está activa con próximo cobro 2026-07-15 y frecuencia "Mensual"
+    When marca "Netflix" como pagada
+    Then su próximo cobro es estrictamente posterior a hoy
+    And su fecha conserva el día de cobro original
+```
+
+```gherkin
+Rule: FR-038 El registro del pago MUST preservar la trazabilidad del cobro
+  Scenario: Se conserva la fecha del último pago
+    Given hoy es 2026-10-01
+    And "Netflix" está activa con próximo cobro 2026-10-01
+    When marca "Netflix" como pagada
+    And la marca como pagada de nuevo el 2026-11-02
+    Then la fecha del último pago es 2026-11-02
+    And su próximo cobro es 2026-12-02
+
+  Scenario: Solo las suscripciones activas pueden marcarse como pagadas
+    Given "Netflix" está en estado "Pausada"
+    When intenta marcarla como pagada
+    Then la operación se rechaza con un mensaje en español
+    And su próximo cobro no cambia
+    And no se registra fecha de pago
+```
+
+```gherkin
+Rule: FR-039 El usuario MUST poder cancelar una suscripción
+  Scenario: Cancelación con confirmación
+    Given hoy es 2026-10-01
+    And "Netflix" está activa con próximo cobro 2026-10-01
+    When cancela "Netflix" y confirma
+    Then su estado pasa a "Cancelada"
+    And queda registrada la fecha de baja 2026-10-01
+    And su próximo cobro conserva la fecha original
+
+  Scenario: Cancelación sin confirmación no surte efecto
+    Given "Netflix" está activa
+    When cancela "Netflix" y no confirma
+    Then "Netflix" sigue activa
+    And no queda registrada ninguna fecha de baja
+
+  Scenario: La cancelación excluye la suscripción de métricas y alertas
+    Given "Netflix" está activa por 15000 mensual con próximo cobro 2026-10-05
+    When cancela "Netflix" y confirma
+    Then el gasto real mensual pasa a 0
+    And la suscripción no genera alertas de renovación
+    And la proyección anual no la incluye
+
+  Scenario: Cancelación repetida
+    Given "Netflix" está en estado "Cancelada"
+    When intenta cancelarla de nuevo
+    Then la operación se rechaza
+    And su fecha de baja original no se modifica
+```
+
+```gherkin
+Rule: FR-040 El usuario MUST poder reactivar una suscripción cancelada
+  Scenario: Reactivación
+    Given "Netflix" está en estado "Cancelada" con fecha de baja 2026-10-01
+    When reactiva "Netflix"
+    Then su estado pasa a "Activa"
+    And su fecha de baja se elimina
+    And su próximo cobro se conserva
+    And vuelve a computar en el gasto real mensual
+    And vuelve a ser elegible para alertas de renovación
+
+  Scenario: Solo las canceladas pueden reactivarse
+    Given "Netflix" está en estado "Activa"
+    When intenta reactivarla
+    Then la operación se rechaza
+    And su estado sigue siendo "Activa"
+
+  Scenario: Reactivar una suscripción cuyo próximo cobro ya pasó
+    Given hoy es 2026-10-01
+    And "Netflix" está cancelada con próximo cobro 2026-08-01
+    When reactiva "Netflix"
+    Then su estado es "Activa"
+    And se muestra como cobro atrasado
+    And su próximo cobro sigue siendo 2026-08-01
+```
+
+```gherkin
+Rule: FR-041 El pago y la baja MUST reflejarse de inmediato en todas las vistas
+  Scenario: Panel y alertas tras marcar como pagada
+    Given el usuario tiene el panel visible con 1 activa
+    And "Netflix" tiene próximo cobro 2026-10-01
+    When marca "Netflix" como pagada
+    Then el panel recalcula sin requerir recarga
+    And "Netflix" desaparece de las alertas de los próximos 7 días
+    And el listado muestra la fecha del último pago
+
+  Scenario: Panel tras cancelar
+    Given el usuario tiene el panel visible con 2 activas
+    When cancela una suscripción y confirma
+    Then el panel refleja el nuevo conteo sin requerir recarga
+    And el gasto real mensual se recalcula sin la suscripción cancelada
+```
+
 ### Key Entities
 
 - **Suscripción**: gasto recurrente registrado por el usuario. Atributos:
   identificador, nombre del servicio, monto, frecuencia (Mensual o Anual),
-  categoría, fecha de próximo cobro, estado (Activa o Pausada) y fecha de
-  registro. Es la entidad central; todas las métricas y alertas se derivan de
-  ella.
+  categoría, fecha de próximo cobro, estado (Activa, Pausada o Cancelada),
+  fecha del último pago, fecha de baja y fecha de registro. Es la entidad
+  central; todas las métricas y alertas se derivan de ella. La fecha del último
+  pago y la fecha de baja las mantiene el sistema según la acción del usuario y
+  no son editables a mano; ambas valen "sin definir" cuando no aplican.
 - **Categoría**: agrupación a la que pertenece cada suscripción, usada para el
   análisis de distribución. Catálogo predeterminado de ocho valores
   (Entretenimiento, Trabajo, Salud, Educación, Hogar, Utilidades, Finanzas,
