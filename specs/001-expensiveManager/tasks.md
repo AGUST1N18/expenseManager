@@ -163,34 +163,34 @@ base de datos real sea aditiva (constitución I).
 
 ### Contrato
 
-- [ ] T051 [US5] Crear `specs/001-expensiveManager/contracts/subscription-repository.md` con el contrato completo del puerto: los 10 métodos asíncronos con su firma y sus errores tipados, la forma del documento persistido (`schemaVersion` y `subscriptions`), la regla de que todo adaptador devuelve `Promise` y no puede filtrar el almacenamiento, y una sección de contrato para el `HttpSubscriptionRepository` futuro. Es la referencia escrita que implementan T064 (contrato en JSDoc), T065 (adaptador de localStorage) y T067 (stub HTTP), y que verifica la suite de contrato T062 (puerta G-03)
+- [x] T051 [US5] Crear `specs/001-expensiveManager/contracts/subscription-repository.md` con el contrato completo del puerto: los 10 métodos asíncronos con su firma y sus errores tipados, la forma del documento persistido (`schemaVersion` y `subscriptions`), la regla de que todo adaptador devuelve `Promise` y no puede filtrar el almacenamiento, y una sección de contrato para el `HttpSubscriptionRepository` futuro. Es la referencia escrita que implementan T064 (contrato en JSDoc), T065 (adaptador de localStorage) y T067 (stub HTTP), y que verifica la suite de contrato T062 (puerta G-03)
 
 ### Errores
 
-- [ ] T052 Escribir `tests/unit/data/errors.test.js` que verifique nombre, mensaje y cadena `cause` de cada tipo de error
-- [ ] T053 [P] [US1] Crear `src/data/errors/ValidationError.js` con `errors` por campo y mensaje en español
-- [ ] T054 [P] [US1] Crear `src/data/errors/NotFoundError.js`
-- [ ] T055 [P] [US5] Crear `src/data/errors/StorageError.js` con las variantes `StorageCorruptedError` y `StorageUnavailableError`
+- [x] T052 Escribir `tests/unit/data/errors.test.js` que verifique nombre, mensaje y cadena `cause` de cada tipo de error
+- [x] T053 [P] [US1] Crear `src/data/errors/ValidationError.js` con `errors` por campo y mensaje en español
+- [x] T054 [P] [US1] Crear `src/data/errors/NotFoundError.js`
+- [x] T055 [P] [US5] Crear `src/data/errors/StorageError.js` con las variantes `StorageCorruptedError` y `StorageUnavailableError`
 
 ### Almacenamiento
 
-- [ ] T056 [P] Crear `tests/support/FakeStorage.js`, un doble de `localStorage` en memoria con capacidad de simular cuota excedida y escritura fallida
-- [ ] T057 [P] Crear `tests/support/fixtures.js` con constructores de suscripciones de prueba y una fecha de referencia fija (2026-10-01) reutilizable
-- [ ] T058 Escribir `tests/unit/data/parseDocument.test.js` con los casos: clave ausente, JSON inválido, `subscriptions` que no es arreglo, `schemaVersion` desconocido y documento válido
-- [ ] T059 [P] [US5] Crear `src/data/storage/migrations.js` con la cadena de migraciones versionadas (solo la versión 1 en el MVP, con el punto de extensión definido)
-- [ ] T060 [P] [US5] Crear `src/data/storage/parseDocument.js` con `parseDocument(raw)` y `serializeDocument(document)`, defensivo frente a datos corruptos
-- [ ] T061 [US5] Crear `src/data/storage/storageAdapter.js` que envuelva `getItem`/`setItem`/`removeItem` en `try/catch`, aplique migraciones y traduzca fallos a `StorageError` (FR-035)
+- [x] T056 [P] Crear `tests/support/FakeStorage.js`, un doble de `localStorage` en memoria con capacidad de simular cuota excedida y escritura fallida
+- [x] T057 [P] Crear `tests/support/fixtures.js` con constructores de suscripciones de prueba y una fecha de referencia fija (2026-10-01) reutilizable
+- [x] T058 Escribir `tests/unit/data/parseDocument.test.js` con los casos: clave ausente, JSON inválido, `subscriptions` que no es arreglo, `schemaVersion` desconocido y documento válido
+- [x] T059 [P] [US5] Crear `src/data/storage/migrations.js` con la cadena de migraciones versionadas (solo la versión 1 en el MVP, con el punto de extensión definido)
+- [x] T060 [P] [US5] Crear `src/data/storage/parseDocument.js` con `parseDocument(raw)` y `serializeDocument(document)`, defensivo frente a datos corruptos
+- [x] T061 [US5] Crear `src/data/storage/storageAdapter.js` que envuelva `getItem`/`setItem`/`removeItem` en `try/catch`, aplique migraciones y traduzca fallos a `StorageError` (FR-035)
 
 ### Repositorio
 
-- [ ] T062 Escribir `tests/contract/repositoryContract.test.js` como suite reutilizable que cualquier adaptador debe pasar: `findAll` ordenado por próximo cobro, `findById`, `create`, `update` preservando estado, `delete`, `setStatus`, `clear` y propagación de errores (puerta G-03)
-- [ ] T063 Extender `tests/contract/repositoryContract.test.js` con el ciclo de vida: `markPaid` escribe `nextChargeDate` y `lastPaidDate`, `cancel` escribe `status` y `cancelledAt`, `reactivate` limpia `cancelledAt`, los tres lanzan `NotFoundError` ante un id inexistente y `update` rechaza escribir `status`, `lastPaidDate` o `cancelledAt` (puerta G-03, FR-037, FR-039, FR-040)
-- [ ] T064 [US5] Crear `src/data/repositories/SubscriptionRepository.js` con el contrato documentado en JSDoc: 10 métodos, todos con retorno `Promise`, y `update` limitado a los campos editables
-- [ ] T065 [US5] [P] Crear `src/data/repositories/LocalStorageSubscriptionRepository.js` con storage inyectado, caché en memoria y escritura del documento completo en cada operación
-- [ ] T066 [P] [US6] Implementar `markPaid(id, payment)`, `cancel(id, cancelledAt)` y `reactivate(id)` en `src/data/repositories/LocalStorageSubscriptionRepository.js`, escribiendo solo los campos que cada transición posee y reutilizando la caché en memoria (FR-037, FR-039, FR-040)
-- [ ] T067 [US5] [P] Crear `src/data/repositories/HttpSubscriptionRepository.js` como stub documentado que cumple el contrato con `fetch` y no está conectado a la selección activa
-- [ ] T068 [US5] Crear `src/data/repositories/index.js` con `createRepository()` que resuelve el adaptador desde `VITE_STORAGE_DRIVER` y falla con error explícito ante un driver desconocido
-- [ ] T069 Escribir `tests/unit/data/localStorageRepository.test.js` con `FakeStorage`, incluidos los escenarios de cuota excedida y almacenamiento no disponible (FR-033 a FR-035)
+- [x] T062 Escribir `tests/contract/repositoryContract.suite.js` como suite reutilizable que cualquier adaptador debe pasar: `findAll` ordenado por próximo cobro, `findById`, `create`, `update` preservando estado, `delete`, `setStatus`, `clear` y propagación de errores (puerta G-03)
+- [x] T063 Extender `tests/contract/repositoryContract.suite.js` con el ciclo de vida: `markPaid` escribe `nextChargeDate` y `lastPaidDate`, `cancel` escribe `status` y `cancelledAt`, `reactivate` limpia `cancelledAt`, los tres lanzan `NotFoundError` ante un id inexistente y `update` rechaza escribir `status`, `lastPaidDate` o `cancelledAt` (puerta G-03, FR-037, FR-039, FR-040)
+- [x] T064 [US5] Crear `src/data/repositories/SubscriptionRepository.js` con el contrato documentado en JSDoc: 10 métodos, todos con retorno `Promise`, y `update` limitado a los campos editables
+- [x] T065 [US5] [P] Crear `src/data/repositories/LocalStorageSubscriptionRepository.js` con storage inyectado, caché en memoria y escritura del documento completo en cada operación
+- [x] T066 [P] [US6] Implementar `markPaid(id, payment)`, `cancel(id, cancelledAt)` y `reactivate(id)` en `src/data/repositories/LocalStorageSubscriptionRepository.js`, escribiendo solo los campos que cada transición posee y reutilizando la caché en memoria (FR-037, FR-039, FR-040)
+- [x] T067 [US5] [P] Crear `src/data/repositories/HttpSubscriptionRepository.js` como stub documentado que cumple el contrato con `fetch` y no está conectado a la selección activa
+- [x] T068 [US5] Crear `src/data/repositories/index.js` con `createRepository()` que resuelve el adaptador desde `VITE_STORAGE_DRIVER` y falla con error explícito ante un driver desconocido
+- [x] T069 Escribir `tests/unit/data/repositories/LocalStorageSubscriptionRepository.test.js` con `FakeStorage`, incluidos los escenarios de cuota excedida y almacenamiento no disponible (FR-033 a FR-035)
 
 **Checkpoint**: la suite de contrato pasa para el adaptador local y cambiar
 `VITE_STORAGE_DRIVER` no requiere tocar ningún otro archivo (FR-036).
